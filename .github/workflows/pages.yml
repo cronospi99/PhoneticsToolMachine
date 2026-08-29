@@ -1,0 +1,76 @@
+# Publish the app to GitHub Pages.
+#
+# The site is plain static files — no build step — so this just assembles the
+# runtime assets into _site and hands them to Pages. Dev-only files (tests,
+# tooling, package.json) are deliberately left out of the artifact.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      # Temporary: the site currently lives on this branch, so deploying from
+      # it gives a live page before the initial pull request is merged.
+      # Remove this line once the PR lands on main.
+      - claude/phonetic-educational-app-qdqla0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        # enablement turns Pages on for the repository if it is not already,
+        # so no manual visit to repository settings is needed.
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp -r css js vendor _site/
+          # Pages does not run Jekyll for Actions-built artifacts, but this
+          # keeps the behaviour explicit if the source is ever switched back.
+          touch _site/.nojekyll
+
+      - name: Check the assembled site is complete
+        run: |
+          test -f _site/index.html
+          test -f _site/js/main.js
+          test -f _site/vendor/three/three.module.min.js
+          # every local asset referenced by index.html must exist in _site
+          grep -oE '(href|src)="[^"]+"' _site/index.html \
+            | sed -E 's/.*"(.*)"/\1/' \
+            | grep -vE '^(https?:|data:|#)' \
+            | while read -r asset; do
+                test -f "_site/$asset" || { echo "missing asset: $asset"; exit 1; }
+              done
+          echo "site OK: $(find _site -type f | wc -l) files"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
