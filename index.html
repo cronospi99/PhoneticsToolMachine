@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phonetics Tool Machine — IPA, Accents &amp; a 3D Mouth</title>
+<meta name="description" content="Type anything and see it in IPA for US, UK and Australian English, hear it spoken, and watch a 3D anatomical model of the mouth articulate every phoneme.">
+<meta name="color-scheme" content="light">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Archivo+Black&family=Nunito:wght@600;800&display=swap">
+
+<link rel="stylesheet" href="css/variables.css">
+<link rel="stylesheet" href="css/comic.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23e23636'/%3E%3Ctext x='16' y='24' font-size='20' text-anchor='middle' fill='%23fff8e7' font-family='Georgia,serif'%3E%C9%99%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── masthead ───────────────────────────────────────────────────────── -->
+  <header class="masthead halftone">
+    <div class="masthead__web webbing" aria-hidden="true"></div>
+    <div class="masthead__web masthead__web--right webbing" aria-hidden="true"></div>
+    <div>
+      <h1 class="masthead__title display display--outline">Phonetics&nbsp;Tool&nbsp;Machine</h1>
+      <p class="masthead__sub">Type it · Hear it · See the mouth make it · US &middot; UK &middot; AU</p>
+    </div>
+    <div class="masthead__badge burst" aria-hidden="true">44<br>Phonemes</div>
+  </header>
+
+  <!-- ── input ──────────────────────────────────────────────────────────── -->
+  <section class="card slant">
+    <div>
+      <div class="card__head">
+        <h2 class="card__title">Say the word</h2>
+        <span class="card__hint">Anything you type is transcribed live</span>
+      </div>
+      <div class="card__body">
+        <label class="sr-only" for="text-input">Text to transcribe</label>
+        <textarea id="text-input" class="input" spellcheck="false"
+          placeholder="With great power comes great responsibility."></textarea>
+
+        <div class="toolbar">
+          <button id="btn-speak" class="btn btn--red" type="button">🔊 Speak</button>
+          <button id="btn-animate" class="btn btn--blue" type="button">👄 Animate</button>
+          <button id="btn-stop" class="btn btn--ghost" type="button">■ Stop</button>
+          <button id="btn-sample" class="btn btn--ghost btn--sm" type="button">🎲 Surprise me</button>
+
+          <span class="toolbar__spacer"></span>
+
+          <label class="field" for="accent-select">
+            Accent
+            <select id="accent-select" class="btn btn--ghost btn--sm"></select>
+          </label>
+          <label class="field" for="rate">
+            Speed
+            <input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="1">
+            <output id="rate-out">1.0×</output>
+          </label>
+        </div>
+
+        <p id="status" class="status" role="status" aria-live="polite">
+          <span class="status__dot"></span><span id="status-text">Ready.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── main grid ──────────────────────────────────────────────────────── -->
+  <div class="grid">
+
+    <div class="stack">
+      <!-- transcription -->
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">Phonemic transcription</h2>
+          <span class="card__hint">Click a word to hear &amp; animate it</span>
+        </div>
+        <div id="transcript" class="card__body--flush"></div>
+        <div class="legend">
+          <span><i class="legend__dot" style="background:var(--accent-us)"></i>US General American</span>
+          <span><i class="legend__dot" style="background:var(--accent-uk)"></i>UK Received Pronunciation</span>
+          <span><i class="legend__dot" style="background:var(--accent-au)"></i>AU General Australian</span>
+          <span><i class="legend__dot" style="background:var(--paper);border-bottom:2px dotted var(--spider-red)"></i>dotted = estimated from spelling</span>
+        </div>
+      </section>
+
+      <!-- chart -->
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">The 44 sounds</h2>
+          <span class="card__hint">Click any symbol</span>
+        </div>
+        <div id="chart" class="card__body"></div>
+        <div class="legend">
+          <span><i class="legend__dot" style="background:var(--cls-short)"></i>short</span>
+          <span><i class="legend__dot" style="background:var(--cls-long)"></i>long</span>
+          <span><i class="legend__dot" style="background:var(--cls-diphthong)"></i>diphthong</span>
+          <span><i class="legend__dot" style="background:var(--cls-voiced)"></i>voiced</span>
+          <span><i class="legend__dot" style="background:var(--cls-unvoiced)"></i>unvoiced</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <!-- 3D visualiser -->
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">Inside the mouth</h2>
+          <span class="card__hint">Drag to orbit · scroll to zoom</span>
+        </div>
+        <div id="stage" class="stage">
+          <div class="stage__overlay">
+            <div id="readout-slot"></div>
+            <div class="stage__views">
+              <button class="btn btn--sm btn--ghost" data-view="sagittal" type="button">Profile</button>
+              <button class="btn btn--sm btn--ghost" data-view="front" type="button">Front</button>
+              <button class="btn btn--sm btn--ghost" data-view="quarter" type="button">¾</button>
+              <button class="btn btn--sm btn--ghost" id="btn-skin" type="button" aria-pressed="false">Skin</button>
+            </div>
+          </div>
+        </div>
+        <div id="meters"></div>
+      </section>
+
+      <!-- how it works -->
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">How to read it</h2>
+        </div>
+        <div class="card__body">
+          <div class="bubble" style="margin-bottom:26px">
+            <strong>Watch the constriction.</strong> The yellow marker shows where the
+            airway is narrowest — lips for /p/, the ridge behind your teeth for /t/,
+            the soft palate for /k/. That location <em>is</em> the consonant.
+          </div>
+          <p style="font-size:0.92rem;line-height:1.6;margin:0">
+            Vowels differ by three things you can see: how <strong>high</strong> the
+            tongue body sits, how far <strong>forward</strong> it is, and whether the
+            <strong>lips round</strong>. Compare /iː/ (high, front, spread) with /uː/
+            (high, back, rounded) and /ɑː/ (low, back, open) — the meters below the
+            model make the difference numeric.
+          </p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Built with vanilla JavaScript, CSS and Three.js ·
+    Transcriptions are broad, and out-of-dictionary words are estimated by rule ·
+    Speech uses your browser&rsquo;s own voices
+  </footer>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
