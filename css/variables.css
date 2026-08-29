@@ -1,0 +1,82 @@
+/* ============================================================================
+   variables.css — the single source of truth for the design system.
+   Change a value here and the whole comic re-inks itself.
+   ========================================================================= */
+
+:root {
+  /* ── ink & paper ─────────────────────────────────────────────────────── */
+  --ink:            #101014;
+  --ink-soft:       #2b2b33;
+  --paper:          #fff8e7;
+  --paper-2:        #ffeecb;
+  --panel:          #ffffff;
+
+  /* ── the hero palette ────────────────────────────────────────────────── */
+  --spider-red:     #e23636;
+  --spider-red-dk:  #a81f1f;
+  --web-blue:       #0476f2;
+  --web-blue-dk:    #0350a8;
+  --comic-yellow:   #fedd00;
+  --comic-yellow-dk:#d4b800;
+
+  /* accent-coded, so US / UK / AU are recognisable anywhere in the UI */
+  --accent-us:      var(--web-blue);
+  --accent-uk:      var(--spider-red);
+  --accent-au:      #00a878;
+
+  /* phoneme classes, borrowed from the wall chart */
+  --cls-short:      #fbe6d4;
+  --cls-long:       #f7c9a6;
+  --cls-diphthong:  #f0a875;
+  --cls-voiced:     #b9cfe8;
+  --cls-unvoiced:   #cfe3bd;
+
+  /* ── ink borders ─────────────────────────────────────────────────────── */
+  --border-thin:    3px;
+  --border:         4px;
+  --border-bold:    6px;
+  --ink-line:       var(--border) solid var(--ink);
+  --ink-line-bold:  var(--border-bold) solid var(--ink);
+
+  /* hard comic drop shadows — never blurred, always offset */
+  --shadow-sm:      3px 3px 0 var(--ink);
+  --shadow:         6px 6px 0 var(--ink);
+  --shadow-lg:      10px 10px 0 var(--ink);
+  --shadow-color:   6px 6px 0 var(--spider-red);
+
+  /* ── action geometry ─────────────────────────────────────────────────── */
+  --skew:           -2.5deg;
+  --skew-hard:      -6deg;
+  --radius:         6px;
+
+  /* ── type ────────────────────────────────────────────────────────────── */
+  --font-display: 'Bangers', 'Anton', Impact, 'Haettenschweiler',
+                  'Arial Narrow Bold', system-ui, sans-serif;
+  --font-body:    'Archivo Black', 'Arial Black', system-ui, -apple-system,
+                  'Segoe UI', Roboto, sans-serif;
+  --font-text:    ui-rounded, 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  --font-ipa:     'Gentium Plus', 'Doulos SIL', 'Charis SIL', 'Lucida Sans Unicode',
+                  'Segoe UI', 'DejaVu Sans', sans-serif;
+
+  --track-display: 0.045em;
+
+  /* ── rhythm ──────────────────────────────────────────────────────────── */
+  --gap-xs: 6px;
+  --gap-sm: 10px;
+  --gap:    16px;
+  --gap-lg: 26px;
+  --pad:    18px;
+
+  --speed-fast: 120ms;
+  --speed:      220ms;
+  --ease-pop:   cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Respect a user's reduced-motion setting: the comic still reads, it just
+   stops bouncing. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --speed-fast: 1ms;
+    --speed: 1ms;
+  }
+}

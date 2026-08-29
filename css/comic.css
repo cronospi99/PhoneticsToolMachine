@@ -1,0 +1,203 @@
+/* ============================================================================
+   comic.css — the reusable comic-book primitives: halftone, ink panels,
+   skewed action containers, speech bubbles, starbursts, chunky buttons.
+   Everything here is generic; page layout lives in app.css.
+   ========================================================================= */
+
+/* ── halftone ──────────────────────────────────────────────────────────────
+   Two offset dot grids at different scales read as a printed screen rather
+   than a regular polka dot. Applied via ::before so it never affects layout. */
+.halftone { position: relative; isolation: isolate; }
+
+.halftone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(currentColor 1.6px, transparent 1.7px),
+    radial-gradient(currentColor 1.1px, transparent 1.2px);
+  background-size: 12px 12px, 7px 7px;
+  background-position: 0 0, 3px 3px;
+  opacity: var(--halftone-opacity, 0.16);
+}
+
+.halftone--dense::before { background-size: 7px 7px, 4px 4px; }
+.halftone--loose::before { background-size: 18px 18px, 11px 11px; }
+
+/* ── ink panels ──────────────────────────────────────────────────────────── */
+.panel {
+  position: relative;
+  background: var(--panel);
+  border: var(--ink-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.panel--bold { border-width: var(--border-bold); box-shadow: var(--shadow-lg); }
+
+/* Action-slanted container. The child counter-skews so text stays readable —
+   skewing the words themselves is what makes cheap comic UIs look broken. */
+.slant { transform: skew(var(--skew)); }
+.slant > * { transform: skew(calc(var(--skew) * -1)); }
+.slant--hard { transform: skew(var(--skew-hard)); }
+.slant--hard > * { transform: skew(calc(var(--skew-hard) * -1)); }
+
+/* ── headings ────────────────────────────────────────────────────────────── */
+.display {
+  font-family: var(--font-display);
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  line-height: 0.94;
+}
+
+/* Layered text outline: a hard comic title without an SVG. */
+.display--outline {
+  color: var(--paper);
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  text-shadow:
+    3px 3px 0 var(--ink),
+    5px 5px 0 var(--spider-red);
+}
+
+.display--stamp {
+  color: var(--comic-yellow);
+  -webkit-text-stroke: 2.5px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 4px 4px 0 var(--ink);
+}
+
+/* ── chunky buttons ──────────────────────────────────────────────────────── */
+.btn {
+  --btn-bg: var(--comic-yellow);
+  --btn-fg: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 1.6vw, 1.2rem);
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  color: var(--btn-fg);
+  background: var(--btn-bg);
+  border: var(--ink-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 9px 16px 7px;
+  cursor: pointer;
+  transition: transform var(--speed-fast) var(--ease-pop),
+              box-shadow var(--speed-fast), background var(--speed-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.btn:hover { transform: translate(-1px, -2px); box-shadow: 5px 6px 0 var(--ink); }
+.btn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
+.btn:focus-visible { outline: 3px dashed var(--web-blue); outline-offset: 3px; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: var(--shadow-sm); }
+
+.btn--red   { --btn-bg: var(--spider-red);   --btn-fg: var(--paper); }
+.btn--blue  { --btn-bg: var(--web-blue);     --btn-fg: var(--paper); }
+.btn--ghost { --btn-bg: var(--panel); }
+.btn--sm    { font-size: 0.85rem; padding: 5px 10px 4px; box-shadow: 2px 2px 0 var(--ink); }
+
+.btn[aria-pressed='true'] {
+  --btn-bg: var(--ink);
+  --btn-fg: var(--comic-yellow);
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* ── speech / action bubbles ─────────────────────────────────────────────── */
+.bubble {
+  position: relative;
+  background: var(--panel);
+  border: var(--ink-line);
+  border-radius: 22px;
+  padding: 12px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Tail drawn as two stacked triangles: the black one is the ink outline. */
+.bubble::after,
+.bubble::before {
+  content: '';
+  position: absolute;
+  left: 34px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+.bubble::before {
+  bottom: calc(-1 * (18px + var(--border)));
+  border-width: calc(18px + var(--border)) calc(14px + var(--border)) 0 0;
+  border-color: var(--ink) transparent transparent transparent;
+}
+.bubble::after {
+  bottom: -18px;
+  border-width: 18px 14px 0 0;
+  border-color: var(--panel) transparent transparent transparent;
+}
+
+/* Jagged "burst" bubble for callouts — a clip-path starburst. */
+.burst {
+  background: var(--comic-yellow);
+  color: var(--ink);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: var(--track-display);
+  display: inline-grid;
+  place-items: center;
+  padding: 14px 20px;
+  clip-path: polygon(
+    50% 0%, 61% 10%, 74% 4%, 78% 18%, 92% 18%, 88% 32%, 100% 42%,
+    89% 52%, 99% 64%, 85% 70%, 88% 84%, 74% 82%, 66% 95%, 55% 86%,
+    45% 100%, 37% 86%, 24% 92%, 22% 78%, 8% 78%, 13% 64%, 1% 54%,
+    12% 44%, 2% 32%, 15% 26%, 12% 12%, 26% 15%, 32% 2%, 43% 11%
+  );
+}
+
+/* ── motion & impact ─────────────────────────────────────────────────────── */
+@keyframes pop-in {
+  from { transform: scale(0.7) rotate(-6deg); opacity: 0; }
+  to   { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes thwip {
+  0%   { transform: translateX(-8px) skewX(6deg); opacity: 0; }
+  60%  { transform: translateX(2px) skewX(-2deg); opacity: 1; }
+  100% { transform: translateX(0) skewX(0); opacity: 1; }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(226, 54, 54, 0.55); }
+  70%  { box-shadow: 0 0 0 14px rgba(226, 54, 54, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(226, 54, 54, 0); }
+}
+
+.pop-in { animation: pop-in var(--speed) var(--ease-pop) both; }
+.thwip  { animation: thwip var(--speed) var(--ease-pop) both; }
+.is-live { animation: pulse-ring 1.1s ease-out infinite; }
+
+/* ── web pattern, for corners ────────────────────────────────────────────── */
+.webbing {
+  background-image:
+    repeating-conic-gradient(from 0deg at 0% 0%,
+      transparent 0deg 8deg, rgba(16, 16, 20, 0.30) 8deg 8.6deg),
+    radial-gradient(circle at 0% 0%,
+      transparent 0 18px, rgba(16, 16, 20, 0.30) 18px 19.2px,
+      transparent 19.2px 42px, rgba(16, 16, 20, 0.30) 42px 43.2px,
+      transparent 43.2px 74px, rgba(16, 16, 20, 0.30) 74px 75.2px,
+      transparent 75.2px);
+  pointer-events: none;
+}
+
+/* Screen-reader-only, kept here because it is a system-level utility. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
