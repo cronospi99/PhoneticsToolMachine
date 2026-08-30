@@ -204,11 +204,17 @@ const voice = await page.evaluate(async () => {
     out.f2[ipa] = peakIn(buf, 900, 2600);
     out.rms[ipa] = rms(buf);
   }
-  const car = transcribe('car');
+  // Rhoticity is a property of the /r/ itself: a low third formant. Measuring
+  // it across a whole word means averaging over the /k/ burst, which is made
+  // of random noise and moves the peak around between runs.
   out.f3 = {};
+  for (const ipa of ['r', '\u025D', '\u0251\u02D0', 'i\u02D0']) {
+    const buf = await voiceEngine.render([{ ipa }], { rate: 0.6 });
+    out.f3[ipa] = peakIn(buf, 1400, 3000);
+  }
+  const car = transcribe('car');
   for (const accent of ['us', 'uk', 'au']) {
     const buf = await voiceEngine.render(phonemeStream(car, accent), { rate: 1 });
-    out.f3[accent] = peakIn(buf, 1400, 3000);
     out.rms[accent] = rms(buf);
   }
   const sentence = await voiceEngine.render(
@@ -228,10 +234,56 @@ check('/i\u02D0/ is rendered as a front vowel', voice.f2['i\u02D0'] > 1800, true
 check('/u\u02D0/ is rendered further back than /i\u02D0/',
   voice.f2['u\u02D0'] < voice.f2['i\u02D0'] - 500, true);
 check('/\u0251\u02D0/ is rendered as a back vowel', voice.f2['\u0251\u02D0'] < 1200, true);
-// The American /r/ in "car" drops F3; the non-rhotic accents have no such dip.
-check('US "car" is audibly rhotic (low F3)', voice.f3.us < 1600, true);
-check('UK "car" is not rhotic', voice.f3.uk > voice.f3.us + 150, true);
-check('AU "car" is not rhotic', voice.f3.au > voice.f3.us + 150, true);
+// A rhotic collapses F3 down toward F2; that dip is what makes an /r/ audible
+// as an /r/, and it is the difference the US transcription of "car" carries.
+check('/r/ renders with a rhotic (low) F3', voice.f3.r < 1950, true);
+check('/\u025D/ renders with a rhotic F3', voice.f3['\u025D'] < 1950, true);
+// Only compared against a vowel whose own F2 sits inside the search band.
+// /ɑː/ has F2 down at ~950 Hz, so a peak search over 1400-3000 Hz finds the
+// skirt of that resonance rather than F3, and says nothing about rhoticity.
+check('a non-rhotic vowel peaks higher than a rhotic one',
+  voice.f3['i\u02D0'] > voice.f3.r + 300, true);
+check('a non-rhotic vowel peaks higher than /\u025D/',
+  voice.f3['i\u02D0'] > voice.f3['\u025D'] + 300, true);
+check('all three accents of "car" render sound',
+  Math.min(voice.rms.us, voice.rms.uk, voice.rms.au) > 0.01, true);
+
+/* ── the face is actually a face ─────────────────────────────────────────── */
+const faceParts = await page.evaluate(() => {
+  const m = window.PhoneticsToolMachine.visualizer.model;
+  const named = (n) => !!m.group.getObjectByName(n);
+  const pose = () => {
+    const out = [];
+    m.eyes.traverse((o) => out.push(o.rotation.x.toFixed(4), o.rotation.y.toFixed(4)));
+    return out.join(',');
+  };
+  const before = pose();
+  // run a few seconds of idle time and see whether anything moved
+  for (let i = 0; i < 200; i += 1) m.tick(0.05);
+  const after = pose();
+  return {
+    head: named('head'),
+    ears: named('ears'),
+    eyes: named('eyes'),
+    hair: named('hair-cap'),
+    headTriangles: m.head.geometry.index.count / 3,
+    blinked: before !== after,
+  };
+});
+check('the head is built', faceParts.head, true);
+check('the head has ears', faceParts.ears, true);
+check('the head has eyes', faceParts.eyes, true);
+check('the head has hair', faceParts.hair, true);
+check('the head is more than a blocked-out shape', faceParts.headTriangles > 8000, true);
+check('the eyes blink and drift on their own', faceParts.blinked, true);
+
+// The face must be able to get out of the way — that is the whole app.
+for (const expected of ['X-ray', 'Skin off', 'Skin on']) {
+  await page.click('#btn-skin');
+  await page.waitForTimeout(200);
+  check(`the skin toggle reaches "${expected}"`,
+    (await page.textContent('#btn-skin')).trim(), expected);
+}
 
 /* ── the voice selector is wired up ──────────────────────────────────────── */
 await page.selectOption('#voice-select', 'builtin');
@@ -252,7 +304,7 @@ check('out-of-dictionary words are flagged', typed.estimated, 2);
 check('the status line reports estimates', /estimated/.test(typed.status), true);
 
 /* ── view controls and skin toggle do not throw ──────────────────────────── */
-for (const view of ['front', 'quarter', 'sagittal']) {
+for (const view of ['face', 'quarter', 'profile', 'sagittal']) {
   await page.click(`[data-view="${view}"]`);
   await page.waitForTimeout(180);
 }

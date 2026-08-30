@@ -17,23 +17,23 @@
 
 import * as THREE from '../../../vendor/three/three.module.min.js';
 
-const LIP_Z = 3.95;      // lip plane, just in front of the incisors
+const LIP_Z = 4.15;      // lip plane, just in front of the incisors
 const RING = 44;         // samples around the aperture
 const TUBE = 10;         // samples around the flesh cross-section
 
 /** Half-width and half-height of the aperture for a parameter set. */
 function aperture(p) {
-  const w = 1.98 - p.lipRound * 1.08 + p.lipSpread * 0.30;
-  const h = 0.06 + p.lipOpen * 1.42 + p.jaw * 0.30;
-  return { w: Math.max(0.42, w), h };
+  const w = 1.72 - p.lipRound * 0.92 + p.lipSpread * 0.26;
+  const h = 0.05 + p.lipOpen * 1.30 + p.jaw * 0.28;
+  return { w: Math.max(0.38, w), h };
 }
 
 /** Flesh radius around the ring: thick mid-lip, thin at the corners. */
 function fleshRadius(theta, isUpper, p) {
   const corner = Math.abs(Math.cos(theta));          // 1 at the corners
   const mid = 1 - corner;
-  const base = isUpper ? 0.30 : 0.36;
-  return 0.10 + base * (0.35 + mid * 0.85) + p.lipRound * 0.10 * mid;
+  const base = isUpper ? 0.24 : 0.30;
+  return 0.08 + base * (0.35 + mid * 0.85) + p.lipRound * 0.08 * mid;
 }
 
 export class Lips {

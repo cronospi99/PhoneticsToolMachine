@@ -33,7 +33,7 @@ const state = {
   accent: 'uk',
   rate: 1,
   result: null,
-  skinMode: 'glass',
+  skinMode: 'face',
   /** 'auto' | 'builtin' | 'system' — which synthesiser speaks. */
   voice: 'auto',
 };
@@ -254,13 +254,20 @@ for (const btn of document.querySelectorAll('[data-view]')) {
   btn.addEventListener('click', () => visualizer?.setView(btn.dataset.view));
 }
 
+const SKIN_MODES = [
+  ['face', 'Skin on', 'The full head — you see inside through the open mouth'],
+  ['glass', 'X-ray', 'Translucent skin, so the articulators show through'],
+  ['hidden', 'Skin off', 'Just the anatomy, with the face removed'],
+];
 const skinBtn = $('#btn-skin');
 skinBtn.addEventListener('click', () => {
-  const order = ['glass', 'solid', 'hidden'];
-  state.skinMode = order[(order.indexOf(state.skinMode) + 1) % order.length];
-  skinBtn.setAttribute('aria-pressed', String(state.skinMode !== 'glass'));
-  skinBtn.textContent = { glass: 'Skin', solid: 'Skin ●', hidden: 'Skin ○' }[state.skinMode];
-  visualizer?.setSkinMode(state.skinMode);
+  const i = SKIN_MODES.findIndex(([id]) => id === state.skinMode);
+  const [id, label, hint] = SKIN_MODES[(i + 1) % SKIN_MODES.length];
+  state.skinMode = id;
+  skinBtn.textContent = label;
+  skinBtn.title = hint;
+  skinBtn.setAttribute('aria-pressed', String(id !== 'face'));
+  visualizer?.setSkinMode(id);
 });
 
 /* ── 3D stage ────────────────────────────────────────────────────────────── */
@@ -347,6 +354,7 @@ function init() {
   ui.rateOut.textContent = '1.0×';
   render();
   startVisualizer();
+  visualizer?.setSkinMode(state.skinMode);
   reportVoices();
 
   // expose the engine for teaching, debugging and automated tests

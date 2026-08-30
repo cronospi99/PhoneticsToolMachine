@@ -56,11 +56,14 @@ export class Visualizer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // filmic tone mapping keeps the highlights on skin from clipping to white
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
     host.appendChild(this.renderer.domElement);
     this.renderer.domElement.setAttribute('aria-label', '3D model of the mouth and vocal tract');
 
     this.controls = new OrbitCamera(this.camera, this.renderer.domElement);
-    this.controls.setView('sagittal');
+    this.controls.setView('face');
 
     this.resize();
     this.observer = new ResizeObserver(() => this.resize());
@@ -72,24 +75,32 @@ export class Visualizer {
   }
 
   addLights() {
-    const key = new THREE.DirectionalLight(0xfff4e2, 2.5);
-    key.position.set(9, 8, 10);
+    // A portrait rig. The intensities are deliberately low: skin is a bright,
+    // broad surface and the previous values — tuned when the model was a small
+    // dark cavity — washed the face out to flat white.
+    const key = new THREE.DirectionalLight(0xfff2e0, 1.35);
+    key.position.set(11, 13, 16);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 1;
-    key.shadow.camera.far = 40;
+    key.shadow.camera.far = 70;
+    key.shadow.camera.left = -18;
+    key.shadow.camera.right = 18;
+    key.shadow.camera.top = 22;
+    key.shadow.camera.bottom = -14;
+    key.shadow.bias = -0.0012;
 
-    const fill = new THREE.DirectionalLight(0x9dc8ff, 1.1);
-    fill.position.set(-9, 2, 6);
+    const fill = new THREE.DirectionalLight(0xbcd4ff, 0.45);
+    fill.position.set(-14, 3, 9);
 
-    const rim = new THREE.DirectionalLight(0xffd166, 1.4);
-    rim.position.set(-4, 5, -10);
+    const rim = new THREE.DirectionalLight(0xffd9a8, 0.75);
+    rim.position.set(-7, 9, -14);
 
     // a light down the throat, so the pharynx is not a black hole
-    const throat = new THREE.PointLight(0xff8a7a, 12, 14, 2);
+    const throat = new THREE.PointLight(0xff8a7a, 9, 13, 2);
     throat.position.set(0, -1.2, -1.6);
 
-    this.scene.add(key, fill, rim, throat, new THREE.AmbientLight(0xffffff, 0.55));
+    this.scene.add(key, fill, rim, throat, new THREE.AmbientLight(0xdfe8ff, 0.30));
   }
 
   /* ── events ─────────────────────────────────────────────────────────── */

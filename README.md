@@ -45,9 +45,11 @@ That covers rhoticity, the BATH and CLOTH splits, LOT unrounding, PALM,
 yod-dropping, American t-flapping, RP happY-tensing, and the Australian vowel
 shifts.
 
-**3D visualiser.** Procedural geometry, posed from a declarative
-phoneme→parameter map. Clicking a chart symbol holds the defining posture —
-for a plosive that is the closure, not the release — so it can be studied.
+**3D visualiser.** A full human head — skull, eyes that blink and drift, brows,
+nose, ears, hair — with the vocal tract inside it, all procedural geometry
+posed from a declarative phoneme→parameter map. Clicking a chart symbol holds
+the defining posture — for a plosive that is the closure, not the release — so
+it can be studied.
 
 **Voice.** The app ships its own speech synthesiser, so the accents work on a
 machine with no en-GB or en-AU voices installed — which is most Windows
@@ -61,8 +63,8 @@ machines. See below.
 js/
   phonetics/     symbols · lexicon · g2p · accents · transcriber
   viz/           articulation · mouthModel · visualizer · orbit
-    anatomy/     tongue · lips · teeth · oralCavity · faceShell
-  audio/         tts · phonemeAudio
+    anatomy/     tongue · lips · teeth · oralCavity · head · eyes · hair
+  audio/         tts · formants · voiceEngine · phonemeAudio
   ui/            transcriptView · chartView · readout
   core/          eventBus · dom
 ```
@@ -70,6 +72,35 @@ js/
 The layering is deliberate: **phonetics knows nothing about rendering, and the
 3D code knows nothing about English.** They meet at exactly one place — the
 articulator parameter set in `viz/articulation.js`.
+
+### The head
+
+The head is a deformed ellipsoid: every vertex starts on a sphere, is scaled
+into a head-shaped ellipsoid, then pushed around by a stack of anatomical
+fields — brow ridge, eye sockets, nose, cheekbones, philtrum, chin, jaw taper.
+Triangles falling inside the mouth and eye openings are dropped, leaving real
+apertures, so opening the jaw reveals the teeth and tongue through the mouth
+exactly as it would on a real face.
+
+Its proportions are dictated by the anatomy already inside it, not by taste.
+The tongue spans 6.6 units, which is about 8 cm of real tongue, so one unit is
+~1.2 cm and a 23 cm head has to be very nearly 20 units tall:
+
+```
+crown ────────── y = +16.3
+hairline ─────── y = +12.4  ┐
+brow ─────────── y =  +7.1  ├ three equal thirds
+nose base ────── y =  +1.7  ┘
+mouth ────────── y =  -0.05   (fixed: the teeth sit at y = 0)
+chin ─────────── y =  -3.6
+```
+
+An earlier attempt at a smaller, better-looking head put the chin at the same
+height as the floor of the mouth, and the tongue hung out through the jaw.
+
+The **Skin** button cycles skin on → X-ray → skin off, because the app exists
+to show the inside of the mouth and the face has to be able to get out of the
+way.
 
 ### The built-in voice
 
@@ -145,7 +176,16 @@ the code path. Utterances are rendered through an `OfflineAudioContext` and a
 DFT locates the formant peaks:
 
 - /iː/ comes out as a front vowel (F2 > 1800 Hz), /ɑː/ as a back one (< 1200)
-- US "car" is audibly rhotic — F3 below 1600 Hz — while UK and AU are not
+- /r/ and /ɝ/ carry a rhotic (low) F3, which plain vowels do not
+
+An earlier version of that last check measured F3 across the whole word "car".
+It passed, then failed, then passed: the /k/ burst is built from random noise,
+and averaging over it moved the peak between runs. Rhoticity is a property of
+the /r/, so that is what is measured now.
+
+The face is checked too — that the head, ears, eyes and hair are all built,
+that the head is more than a blocked-out shape, that the eyes blink and drift
+on their own, and that the skin toggle really does get the face out of the way.
 
 ---
 
@@ -165,8 +205,14 @@ DFT locates the formant peaks:
   pleasant. For natural-sounding speech, install the system voices (on Windows:
   Settings → Time & language → Speech → Manage voices) and the app will pick
   them up on reload.
-- **The 3D model is a teaching diagram, not a medical one.** Proportions are
-  chosen for legibility.
+- **The head is procedural, not scanned.** Every vertex is computed from a
+  handful of anatomical fields, with no sculpted mesh or texture maps, because
+  the app ships no external assets. It reads clearly as a human head, and the
+  proportions are anatomically derived, but it is stylised — soft-featured and
+  short of the detail a scanned or hand-sculpted head would have. That is the
+  ceiling of the approach, not a bug to be fixed with more parameters.
+- **The vocal tract is a teaching diagram, not a medical one.** Its proportions
+  are chosen for legibility.
 
 ## Credits
 

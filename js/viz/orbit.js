@@ -19,20 +19,23 @@ export class OrbitCamera {
   constructor(camera, el) {
     this.camera = camera;
     this.el = el;
-    this.target = new THREE.Vector3(0, -0.4, 0.2);
+    // Framed on the face by default; the mouth views drop the target back down
+    // to the oral cavity, which sits around y = 0.
+    this.target = new THREE.Vector3(0, 5.0, 0.2);
+    this.goalTarget = this.target.clone();
 
     // azimuth 0 puts the camera on +x, looking across the midsagittal plane —
     // the profile view. PI/2 puts it on +z, facing the front of the face.
     this.azimuth = 0;
     this.polar = Math.PI / 2;
-    this.distance = 19;
+    this.distance = 42;
 
     this.goalAzimuth = this.azimuth;
     this.goalPolar = this.polar;
     this.goalDistance = this.distance;
 
-    this.minDistance = 8;
-    this.maxDistance = 34;
+    this.minDistance = 9;
+    this.maxDistance = 90;
     this.enabled = true;
 
     this.pointers = new Map();
@@ -88,19 +91,25 @@ export class OrbitCamera {
   /** Named camera positions the UI exposes as buttons. */
   setView(name) {
     const views = {
-      sagittal: { az: 0, po: Math.PI / 2, d: 18 },
-      front: { az: Math.PI / 2, po: Math.PI / 2, d: 17 },
-      quarter: { az: Math.PI * 0.30, po: Math.PI * 0.44, d: 19 },
-      top: { az: 0, po: 0.55, d: 20 },
+      // whole head
+      face: { az: Math.PI / 2, po: Math.PI / 2, d: 44, y: 5.4 },
+      quarter: { az: Math.PI * 0.30, po: Math.PI * 0.46, d: 44, y: 5.2 },
+      profile: { az: 0, po: Math.PI / 2, d: 44, y: 5.2 },
+      // in close on the articulators
+      sagittal: { az: 0, po: Math.PI / 2, d: 17, y: 0.2 },
+      front: { az: Math.PI / 2, po: Math.PI / 2, d: 15, y: -0.2 },
+      top: { az: 0, po: 0.55, d: 20, y: 0.4 },
     };
-    const v = views[name] || views.sagittal;
+    const v = views[name] || views.face;
     this.goalAzimuth = v.az;
     this.goalPolar = v.po;
     this.goalDistance = v.d;
+    this.goalTarget.set(0, v.y ?? 0.2, 0.2);
   }
 
   /** @param {number} lerp 0..1 smoothing factor for this frame */
   update(lerp = 0.14) {
+    this.target.lerp(this.goalTarget, lerp);
     this.azimuth += (this.goalAzimuth - this.azimuth) * lerp;
     this.polar += (this.goalPolar - this.polar) * lerp;
     this.distance += (this.goalDistance - this.distance) * lerp;

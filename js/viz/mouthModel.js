@@ -15,7 +15,9 @@ import { buildArch } from './anatomy/teeth.js';
 import {
   buildPalate, buildVelum, buildPharynx, buildVocalFolds, buildFloor,
 } from './anatomy/oralCavity.js';
-import { buildFaceShell } from './anatomy/faceShell.js';
+import { buildHead, buildEars, LANDMARKS } from './anatomy/head.js';
+import { buildEyes } from './anatomy/eyes.js';
+import { buildHair } from './anatomy/hair.js';
 import { REST, resolveParams } from './articulation.js';
 
 /** Jaw hinge, roughly at the temporomandibular joint. */
@@ -32,8 +34,10 @@ function materials() {
 
   return {
     tongue: tissue(0xd2544f, { roughness: 0.48 }),
-    lipUpper: tissue(0xc4413f, { roughness: 0.40 }),
-    lipLower: tissue(0xcf4a45, { roughness: 0.40 }),
+    // Real lips are far closer to skin tone than the pillar-box red they get
+    // drawn as; the saturated version read as lipstick stuck on the face.
+    lipUpper: tissue(0xb4736a, { roughness: 0.46 }),
+    lipLower: tissue(0xbe7d72, { roughness: 0.46 }),
     teeth: tissue(0xfbf7ee, { roughness: 0.24, metalness: 0.04 }),
     palate: tissue(0xe7a19c, { roughness: 0.70, side: THREE.DoubleSide }),
     velum: tissue(0xdb8f8c, { roughness: 0.72, side: THREE.DoubleSide }),
@@ -42,15 +46,44 @@ function materials() {
     floor: tissue(0xc86560, { roughness: 0.70 }),
     // Plain transparency reads far more cleanly here than physical
     // transmission, which muddies the articulators behind it.
-    skin: new THREE.MeshStandardMaterial({
-      color: 0xf0c3a4,
-      roughness: 0.68,
+    // Skin carries per-vertex colour from head.js, so the base colour is white
+    // and the variation — flush, shadow, grain — comes from the geometry.
+    skin: new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      roughness: 0.62,
+      metalness: 0,
+      clearcoat: 0.16,
+      clearcoatRoughness: 0.55,
+      sheen: 0.45,
+      sheenColor: new THREE.Color(0xffd9c4),
+      sheenRoughness: 0.8,
+      side: THREE.DoubleSide,
+    }),
+    // plain skin for the lids and ears, which have no vertex colours
+    skinPlain: tissue(0xe8b193, { roughness: 0.62 }),
+    hair: new THREE.MeshStandardMaterial({
+      color: 0x2b1d16,
+      roughness: 0.74,
+      metalness: 0.08,
+    }),
+    sclera: new THREE.MeshPhysicalMaterial({
+      color: 0xfdfbf7, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.06,
+    }),
+    iris: new THREE.MeshStandardMaterial({
+      color: 0x6b4d2a, roughness: 0.30, emissive: 0x1a1006, emissiveIntensity: 0.35,
+    }),
+    pupil: new THREE.MeshBasicMaterial({ color: 0x07050a }),
+    cornea: new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      roughness: 0.02,
       metalness: 0,
       transparent: true,
-      opacity: 0.26,
-      side: THREE.DoubleSide,
-      depthWrite: false,
+      opacity: 0.28,
+      clearcoat: 1,
+      clearcoatRoughness: 0,
     }),
+    brow: new THREE.MeshStandardMaterial({ color: 0x33221a, roughness: 0.82 }),
   };
 }
 
@@ -70,11 +103,26 @@ export class MouthModel {
     this.folds = buildVocalFolds(this.mat.folds);
     this.upperTeeth = buildArch(this.mat.teeth, true);
     this.upperLip = new Lips(this.mat.lipUpper, true);
-    this.faceShell = buildFaceShell(this.mat.skin);
+
+    // ── the face ──
+    this.head = buildHead(this.mat.skin);
+    this.ears = buildEars(this.mat.skinPlain);
+    this.eyes = buildEyes({
+      sclera: this.mat.sclera,
+      iris: this.mat.iris,
+      pupil: this.mat.pupil,
+      cornea: this.mat.cornea,
+      skin: this.mat.skinPlain,
+      brow: this.mat.brow,
+    });
+    this.hair = buildHair(this.mat.hair);
+    this.face = new THREE.Group();
+    this.face.name = 'face';
+    this.face.add(this.head, this.ears, this.eyes, this.hair);
 
     this.group.add(
       this.palate, this.velum, this.pharynx, this.folds,
-      this.upperTeeth, this.upperLip.mesh, this.faceShell,
+      this.upperTeeth, this.upperLip.mesh, this.face,
     );
 
     // ── jaw-mounted structures ──
@@ -190,22 +238,40 @@ export class MouthModel {
     this.constrictionGap = near.gap;
   }
 
-  /** Advance time-based motion (vocal fold flutter). */
+  /** Advance time-based motion: vocal fold flutter, blinking, gaze drift. */
   tick(dt) {
     this.phase += dt * 34;
     this.folds.userData.setVoicing(this.params.voice, this.phase);
+    this.eyes.userData.tick(dt);
   }
 
-  /** Toggle the translucent skin between glass, solid-ish and hidden. */
+  /**
+   * How much of the face to show.
+   *
+   *   face    the full head, opaque — you see inside through the open mouth
+   *   glass   translucent, so the articulators show through the cheeks
+   *   hidden  no face at all, just the anatomy
+   *
+   * The app exists to show the inside of the mouth, so every mode short of
+   * 'face' is a way of getting the skin out of the way.
+   */
   setSkinMode(mode) {
-    const s = this.mat.skin;
     if (mode === 'hidden') {
-      this.faceShell.visible = false;
+      this.face.visible = false;
       return;
     }
-    this.faceShell.visible = true;
-    s.opacity = mode === 'solid' ? 0.62 : 0.26;
-    s.needsUpdate = true;
+    this.face.visible = true;
+
+    const glass = mode === 'glass';
+    for (const key of ['skin', 'skinPlain', 'hair']) {
+      const m = this.mat[key];
+      m.transparent = glass;
+      m.opacity = glass ? 0.30 : 1;
+      m.depthWrite = !glass;
+      m.needsUpdate = true;
+    }
+    // the eyes read as floating orbs behind a translucent face, so they go too
+    this.eyes.visible = !glass;
   }
 
   dispose() {

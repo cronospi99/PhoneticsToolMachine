@@ -189,10 +189,12 @@ export function buildVocalFolds(material) {
 
 /** Floor of the mouth under the tongue, so the model is not hollow. */
 export function buildFloor(material) {
+  // Kept well back: at full size this reached z ≈ 3.9 and pushed out through
+  // the skin of the chin, which sits around z ≈ 2.8 at this height.
   const geo = new THREE.SphereGeometry(2.6, 24, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
-  geo.scale(0.86, 0.42, 1.35);
+  geo.scale(0.80, 0.34, 0.85);
   const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(0, -2.30, 0.35);
+  mesh.position.set(0, -2.30, -1.50);
   mesh.name = 'mouth-floor';
   return mesh;
 }
