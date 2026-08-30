@@ -12,6 +12,7 @@ import { transcribe, lineFor, phonemeStream, transcribeWord } from './phonetics/
 import { ACCENTS } from './phonetics/accents.js';
 import { CHART_INDEX } from './phonetics/symbols.js';
 import speaker from './audio/tts.js';
+import voiceEngine from './audio/voiceEngine.js';
 import { playPhoneme, unlockAudio } from './audio/phonemeAudio.js';
 import { TranscriptView } from './ui/transcriptView.js';
 import { ChartView } from './ui/chartView.js';
@@ -33,7 +34,26 @@ const state = {
   rate: 1,
   result: null,
   skinMode: 'glass',
+  /** 'auto' | 'builtin' | 'system' — which synthesiser speaks. */
+  voice: 'auto',
 };
+
+/** Filled in once the browser reports its voice list. */
+let voiceAvailability = {};
+
+/**
+ * Should this accent be spoken by the built-in engine?
+ *
+ * In 'auto', yes whenever the system has no genuine voice for that accent —
+ * which on a stock Windows install is usually en-GB and en-AU. Falling back to
+ * a US voice reading a UK transcription would be actively misleading.
+ */
+function useBuiltIn(accent) {
+  if (state.voice === 'builtin') return true;
+  if (state.voice === 'system') return false;
+  const info = voiceAvailability[accent];
+  return !(info && info.exact);
+}
 
 /* ── boot ────────────────────────────────────────────────────────────────── */
 
@@ -43,6 +63,7 @@ const ui = {
   statusText: $('#status-text'),
   accentSelect: $('#accent-select'),
   rate: $('#rate'),
+  voiceSelect: $('#voice-select'),
   rateOut: $('#rate-out'),
   stage: $('#stage'),
 };
@@ -68,6 +89,22 @@ ui.accentSelect.value = state.accent;
 ui.accentSelect.addEventListener('change', () => {
   state.accent = ui.accentSelect.value;
   transcript.setActiveAccent(state.accent);
+  reportVoices();
+});
+
+const VOICE_MODES = [
+  ['auto', 'Auto — best available'],
+  ['builtin', 'Built-in voice (always works)'],
+  ['system', "System voice (your device's)"],
+];
+for (const [value, label] of VOICE_MODES) {
+  ui.voiceSelect.appendChild(el('option', { value, text: label }));
+}
+ui.voiceSelect.value = state.voice;
+ui.voiceSelect.addEventListener('change', () => {
+  state.voice = ui.voiceSelect.value;
+  speaker.cancel();
+  voiceEngine.stop();
   reportVoices();
 });
 
@@ -106,33 +143,55 @@ ui.input.addEventListener('input', () => {
 
 /* ── speech ──────────────────────────────────────────────────────────────── */
 
+/**
+ * Speak the current text, and drive the mouth from the same phoneme stream.
+ *
+ * Both the audio and the animation are timed by buildPoseTrack at the same
+ * rate, so with the built-in voice the model and the sound stay in step for
+ * free — the mouth is literally showing what is being synthesised.
+ */
 async function speakLine(accent = state.accent) {
-  if (!state.text.trim()) return;
+  if (!state.text.trim() || !state.result || !state.result.wordCount) return;
   unlockAudio();
-  if (!speaker.supported) {
-    setStatus('This browser has no speech synthesis.', 'error');
-    return;
+
+  const builtIn = useBuiltIn(accent);
+  const stream = phonemeStream(state.result, accent);
+  transcript.setActiveAccent(accent);
+
+  if (!builtIn && !speaker.supported) {
+    setStatus('No system speech here — switching to the built-in voice.', 'warn');
+    state.voice = 'builtin';
+    ui.voiceSelect.value = 'builtin';
+    return speakLine(accent);
   }
-  setStatus(`Speaking (${accent.toUpperCase()})…`);
-  await speaker.speak(state.text, { accent, rate: state.rate });
+
+  if (visualizer && stream.length) visualizer.play(stream, state.rate);
+
+  if (builtIn) {
+    setStatus(`Speaking with the built-in voice (${accent.toUpperCase()})…`);
+    await voiceEngine.speak(stream, { rate: state.rate });
+  } else {
+    const name = voiceAvailability[accent]?.name;
+    setStatus(`Speaking (${accent.toUpperCase()}${name ? ` · ${name}` : ''})…`);
+    await speaker.speak(state.text, { accent, rate: state.rate });
+  }
   setStatus('Ready.');
 }
 
-/** Animate the mouth through a phoneme stream, and speak it alongside. */
-function animateLine(accent = state.accent, alsoSpeak = false) {
+/** Animate the mouth alone, with no audio. */
+function animateLine(accent = state.accent) {
   if (!state.result || !state.result.wordCount || !visualizer) return;
   const stream = phonemeStream(state.result, accent);
   if (!stream.length) return;
   transcript.setActiveAccent(accent);
   visualizer.play(stream, state.rate);
   setStatus(`Articulating ${stream.length} segments (${accent.toUpperCase()})…`);
-  if (alsoSpeak) speaker.speak(state.text, { accent, rate: state.rate });
 }
 
 /* ── bus wiring ──────────────────────────────────────────────────────────── */
 
 bus.on('speak:line', ({ accent }) => speakLine(accent));
-bus.on('animate:line', ({ accent }) => animateLine(accent, true));
+bus.on('animate:line', ({ accent }) => animateLine(accent));
 
 bus.on('word:selected', async ({ wordIndex, accent }) => {
   const tok = state.result?.tokens[wordIndex];
@@ -141,10 +200,14 @@ bus.on('word:selected', async ({ wordIndex, accent }) => {
   transcript.setActiveAccent(accent);
   transcript.markWordSpeaking(accent, wordIndex);
 
-  if (visualizer) {
-    visualizer.play(tok.accents[accent].phonemes.map((p) => ({ ipa: p.ipa })), state.rate);
+  const stream = tok.accents[accent].phonemes.map((p) => ({ ipa: p.ipa }));
+  if (visualizer) visualizer.play(stream, state.rate);
+
+  if (useBuiltIn(accent)) {
+    await voiceEngine.speak(stream, { rate: state.rate * 0.85 });
+  } else {
+    await speaker.speak(tok.spelling, { accent, rate: state.rate * 0.9 });
   }
-  await speaker.speak(tok.spelling, { accent, rate: state.rate * 0.9 });
   transcript.clearHighlight();
 });
 
@@ -156,20 +219,25 @@ bus.on('phoneme:selected', async ({ ipa, entry }) => {
   const symbol = state.accent === 'us' && entry ? entry.us : ipa;
   if (visualizer) visualizer.showPhoneme(symbol);
 
-  const played = await playPhoneme(symbol, { accent: state.accent, rate: state.rate });
+  const played = await playPhoneme(symbol, {
+    accent: state.accent,
+    rate: state.rate,
+    prefer: useBuiltIn(state.accent) ? 'builtin' : 'word',
+  });
   setStatus(
     played.via === 'word'
       ? `/${ipa}/ as in “${played.word}”`
-      : `/${ipa}/ — synthesised in isolation`,
+      : `/${ipa}/ — the sound on its own, from the built-in voice`,
   );
 });
 
 /* ── buttons ─────────────────────────────────────────────────────────────── */
 
 $('#btn-speak').addEventListener('click', () => speakLine());
-$('#btn-animate').addEventListener('click', () => animateLine(state.accent, true));
+$('#btn-animate').addEventListener('click', () => animateLine(state.accent));
 $('#btn-stop').addEventListener('click', () => {
   speaker.cancel();
+  voiceEngine.stop();
   visualizer?.stop();
   transcript.clearHighlight();
   chart.clearActive();
@@ -231,19 +299,44 @@ function startVisualizer() {
 
 /* ── voice availability ──────────────────────────────────────────────────── */
 
+/**
+ * Work out what this device can actually voice, and say so plainly.
+ *
+ * The honest message matters here: a stock Windows install typically has one
+ * en-US voice and nothing for en-GB or en-AU, and silently reading a UK
+ * transcription in an American accent would teach the wrong thing.
+ */
 async function reportVoices() {
-  if (!speaker.supported) {
-    setStatus('No speech synthesis in this browser — text and the 3D model still work.', 'warn');
+  if (speaker.supported) {
+    await speaker.ready;
+    voiceAvailability = speaker.availability();
+  } else {
+    voiceAvailability = {};
+  }
+
+  const exact = ACCENTS.filter((a) => voiceAvailability[a.id]?.exact).map((a) => a.label);
+  const missing = ACCENTS.filter((a) => !voiceAvailability[a.id]?.exact).map((a) => a.label);
+
+  if (state.voice === 'builtin') {
+    setStatus('Built-in voice: all three accents available, no system voices needed.');
     return;
   }
-  await speaker.ready;
-  const avail = speaker.availability();
-  const here = avail[state.accent];
-  if (!here.available) {
-    setStatus(`No English voice installed for ${state.accent.toUpperCase()}.`, 'warn');
-  } else if (!here.exact) {
-    setStatus(`No native ${state.accent.toUpperCase()} voice here — using “${here.name}”.`, 'warn');
+  if (state.voice === 'system' && missing.length) {
+    setStatus(
+      `System voices cover ${exact.length ? exact.join(', ') : 'none'} — `
+      + `${missing.join(', ')} will fall back to the nearest voice.`,
+      'warn',
+    );
+    return;
   }
+  if (!missing.length) {
+    setStatus('System voices found for US, UK and AU.');
+    return;
+  }
+  setStatus(
+    `No system voice for ${missing.join(', ')} — the built-in voice will speak `
+    + `${missing.length === ACCENTS.length ? 'all accents' : 'those'}.`,
+  );
 }
 
 /* ── go ──────────────────────────────────────────────────────────────────── */
@@ -259,6 +352,7 @@ function init() {
   // expose the engine for teaching, debugging and automated tests
   window.PhoneticsToolMachine = {
     transcribe, transcribeWord, lineFor, phonemeStream, CHART_INDEX, state,
+    voiceEngine,
     get visualizer() { return visualizer; },
     get speaker() { return speaker; },
   };

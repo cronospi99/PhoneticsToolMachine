@@ -160,6 +160,85 @@ check('a close vowel is narrower than an open one', anatomy.i < anatomy.a, true)
 check('an open vowel leaves the tract wide', anatomy.a > 1.0, true);
 check('/p/ seals the lips', anatomy.pLips, 0);
 
+/* ── the built-in voice actually makes the right sound ───────────────────── */
+// The point of the built-in engine is that it works with no OS voices AND that
+// the accents genuinely differ. Both are claims about audio, so they are
+// checked by rendering offline and measuring the spectrum, not by trusting the
+// code path. A crude DFT over the steady middle of the buffer is enough to
+// locate a formant peak within a band.
+const voice = await page.evaluate(async () => {
+  const { voiceEngine } = await import('/js/audio/voiceEngine.js');
+  const { transcribe, phonemeStream } = window.PhoneticsToolMachine;
+
+  const peakIn = (buf, lo, hi) => {
+    const d = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const from = Math.floor(d.length * 0.35);
+    const to = Math.floor(d.length * 0.65);
+    let best = 0;
+    let bestF = 0;
+    for (let f = lo; f <= hi; f += 12) {
+      let re = 0;
+      let im = 0;
+      const w = (2 * Math.PI * f) / sr;
+      for (let i = 0; i < to - from; i += 2) {
+        const sample = d[from + i];
+        re += sample * Math.cos(w * i);
+        im += sample * Math.sin(w * i);
+      }
+      const mag = Math.hypot(re, im);
+      if (mag > best) { best = mag; bestF = f; }
+    }
+    return bestF;
+  };
+  const rms = (buf) => {
+    const d = buf.getChannelData(0);
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 1) sum += d[i] * d[i];
+    return Math.sqrt(sum / d.length);
+  };
+
+  const out = { f2: {}, rms: {} };
+  for (const ipa of ['i\u02D0', 'u\u02D0', '\u0251\u02D0']) {
+    const buf = await voiceEngine.render([{ ipa }], { rate: 0.6 });
+    out.f2[ipa] = peakIn(buf, 900, 2600);
+    out.rms[ipa] = rms(buf);
+  }
+  const car = transcribe('car');
+  out.f3 = {};
+  for (const accent of ['us', 'uk', 'au']) {
+    const buf = await voiceEngine.render(phonemeStream(car, accent), { rate: 1 });
+    out.f3[accent] = peakIn(buf, 1400, 3000);
+    out.rms[accent] = rms(buf);
+  }
+  const sentence = await voiceEngine.render(
+    phonemeStream(transcribe('the amazing spider'), 'uk'), { rate: 1 },
+  );
+  out.sentenceRms = rms(sentence);
+  out.sentenceSeconds = sentence.duration;
+  return out;
+});
+
+check('the built-in voice produces audible sound', voice.rms['i\u02D0'] > 0.01, true);
+check('a whole sentence renders with sound', voice.sentenceRms > 0.01, true);
+check('a sentence takes a plausible time to say',
+  voice.sentenceSeconds > 1 && voice.sentenceSeconds < 8, true);
+// F2 is the front/back dimension: /i/ front, /u/ back, /\u0251/ furthest back
+check('/i\u02D0/ is rendered as a front vowel', voice.f2['i\u02D0'] > 1800, true);
+check('/u\u02D0/ is rendered further back than /i\u02D0/',
+  voice.f2['u\u02D0'] < voice.f2['i\u02D0'] - 500, true);
+check('/\u0251\u02D0/ is rendered as a back vowel', voice.f2['\u0251\u02D0'] < 1200, true);
+// The American /r/ in "car" drops F3; the non-rhotic accents have no such dip.
+check('US "car" is audibly rhotic (low F3)', voice.f3.us < 1600, true);
+check('UK "car" is not rhotic', voice.f3.uk > voice.f3.us + 150, true);
+check('AU "car" is not rhotic', voice.f3.au > voice.f3.us + 150, true);
+
+/* ── the voice selector is wired up ──────────────────────────────────────── */
+await page.selectOption('#voice-select', 'builtin');
+await page.waitForTimeout(250);
+check('choosing the built-in voice is reported',
+  /built-in/i.test(await page.textContent('#status-text')), true);
+
 /* ── typing re-transcribes ───────────────────────────────────────────────── */
 await page.fill('#text-input', 'zorblatt fizzled');
 await page.waitForTimeout(400);

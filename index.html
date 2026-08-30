@@ -44,7 +44,7 @@
 
         <div class="toolbar">
           <button id="btn-speak" class="btn btn--red" type="button">🔊 Speak</button>
-          <button id="btn-animate" class="btn btn--blue" type="button">👄 Animate</button>
+          <button id="btn-animate" class="btn btn--blue" type="button" title="Show the mouth without sound">👄 Mouth only</button>
           <button id="btn-stop" class="btn btn--ghost" type="button">■ Stop</button>
           <button id="btn-sample" class="btn btn--ghost btn--sm" type="button">🎲 Surprise me</button>
 
@@ -53,6 +53,10 @@
           <label class="field" for="accent-select">
             Accent
             <select id="accent-select" class="btn btn--ghost btn--sm"></select>
+          </label>
+          <label class="field" for="voice-select">
+            Voice
+            <select id="voice-select" class="btn btn--ghost btn--sm"></select>
           </label>
           <label class="field" for="rate">
             Speed
@@ -151,7 +155,7 @@
   <footer class="footer">
     Built with vanilla JavaScript, CSS and Three.js ·
     Transcriptions are broad, and out-of-dictionary words are estimated by rule ·
-    Speech uses your browser&rsquo;s own voices
+    Ships with its own formant voice, so the accents work without any system voices installed
   </footer>
 </div>
 

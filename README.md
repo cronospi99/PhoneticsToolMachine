@@ -49,6 +49,10 @@ shifts.
 phoneme→parameter map. Clicking a chart symbol holds the defining posture —
 for a plosive that is the closure, not the release — so it can be studied.
 
+**Voice.** The app ships its own speech synthesiser, so the accents work on a
+machine with no en-GB or en-AU voices installed — which is most Windows
+machines. See below.
+
 ---
 
 ## Architecture
@@ -66,6 +70,37 @@ js/
 The layering is deliberate: **phonetics knows nothing about rendering, and the
 3D code knows nothing about English.** They meet at exactly one place — the
 articulator parameter set in `viz/articulation.js`.
+
+### The built-in voice
+
+The Web Speech API can only use voices the operating system already has. A
+stock Windows install typically has one en-US voice and nothing for en-GB or
+en-AU, so every accent button sounds American — which defeats the whole point
+of the tool.
+
+So `audio/voiceEngine.js` is a formant synthesiser: a source-filter model, the
+classic account of how speech works.
+
+```
+glottal pulse train ─┐
+                     ├─→ 3 parallel formant resonators ─→ output
+shaped noise ────────┘   (or straight out, for frication)
+```
+
+It has no accent-specific code at all. Formant targets are derived from the
+same articulator parameters that pose the 3D model — tongue height sets F1,
+fronting and lip rounding set F2, rhotic bunching collapses F3 — so the
+accents differ purely because the IPA differs. `kɑː` and `kɐː` have different
+tongue positions, therefore different frequencies, therefore different sounds.
+
+It also means the mouth and the audio are driven by one timeline: both are
+timed by `buildPoseTrack`, so the model is literally showing what is being
+synthesised.
+
+It sounds synthetic — this is 1980s technology, not a neural vocoder — but it
+is phonetically accurate, always available, and adds nothing to the download.
+The **Voice** selector chooses between it and the system voices; on *Auto* the
+built-in engine takes over for exactly the accents the device cannot voice.
 
 ### The parameter contract
 
@@ -105,6 +140,13 @@ built —
 - a close vowel narrows the tract more than an open one
 - /p/ seals the lips
 
+The voice is tested the same way — by measuring the sound rather than trusting
+the code path. Utterances are rendered through an `OfflineAudioContext` and a
+DFT locates the formant peaks:
+
+- /iː/ comes out as a front vowel (F2 > 1800 Hz), /ɑː/ as a back one (< 1200)
+- US "car" is audibly rhotic — F3 below 1600 Hz — while UK and AU are not
+
 ---
 
 ## Honest limitations
@@ -118,8 +160,11 @@ built —
   reading only; telling them apart needs part-of-speech tagging.
 - **Connected-speech effects** — assimilation, elision, RP linking /r/ across
   word boundaries — are not modelled. Each word is transcribed in isolation.
-- **Speech uses your browser's own voices.** If no native en-AU voice is
-  installed, the app says which voice it substituted rather than pretending.
+- **The built-in voice sounds like a speech synthesiser**, because it is one.
+  It is accurate about vowel quality, rhoticity and voicing; it is not
+  pleasant. For natural-sounding speech, install the system voices (on Windows:
+  Settings → Time & language → Speech → Manage voices) and the app will pick
+  them up on reload.
 - **The 3D model is a teaching diagram, not a medical one.** Proportions are
   chosen for legibility.
 

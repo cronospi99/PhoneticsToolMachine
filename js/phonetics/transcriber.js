@@ -111,15 +111,47 @@ export function lineFor(result, accentId) {
 }
 
 /**
- * Flatten a transcription into the phoneme stream the 3D visualiser animates,
- * keeping a back-reference to the word each segment came from.
+ * Flatten a transcription into the phoneme stream the 3D visualiser animates
+ * and the built-in voice speaks, keeping a back-reference to the word each
+ * segment came from.
+ *
+ * Stress marks are not phonemes, so they never reach the stream as segments —
+ * instead the stress they carry is attached to the segments of the syllable
+ * they introduce (1 = primary, 2 = secondary, 0 = unstressed). The voice
+ * engine reads that to place pitch accents, without which a sentence comes
+ * out as a flat list of syllables.
  */
 export function phonemeStream(result, accentId) {
   const stream = [];
   result.tokens.forEach((t, wordIndex) => {
     if (t.kind !== 'word') return;
-    for (const p of t.accents[accentId].phonemes) {
-      stream.push({ ipa: p.ipa, vowel: p.vowel, wordIndex, spelling: t.spelling });
+    let pending = 0;
+    let current = 0;
+    let seenNucleus = false;
+    for (const tok of t.accents[accentId].tokens) {
+      if (tok.type === 'stress') {
+        pending = tok.ipa === 'ˈ' ? 1 : 2;
+        continue;
+      }
+      if (tok.type !== 'phoneme') continue;
+      // Stress runs from the mark through the syllable's own vowel, and clears
+      // at the NEXT vowel. Clearing on the first vowel seen would strip the
+      // accent off the very nucleus that carries it.
+      if (pending) {
+        current = pending;
+        pending = 0;
+        seenNucleus = false;
+      } else if (tok.vowel && current && seenNucleus) {
+        current = 0;
+      }
+      if (tok.vowel && current) seenNucleus = true;
+      stream.push({
+        ipa: tok.ipa,
+        vowel: tok.vowel,
+        stressed: current,
+        wordIndex,
+        spelling: t.spelling,
+      });
     }
   });
   return stream;
