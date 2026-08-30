@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node tools/serve.mjs",
+    "build:head": "node tools/build-head.mjs",
     "test": "node tests/engine.test.mjs && node tests/smoke.mjs"
   },
   "devDependencies": {

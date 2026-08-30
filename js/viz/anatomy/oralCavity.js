@@ -217,3 +217,110 @@ export function roofHeightAt(z) {
 }
 
 export { palateMidline };
+
+/* ── the rest of the airway ─────────────────────────────────────────────── */
+
+/**
+ * The parts of the vocal tract below and behind the mouth. None of them move
+ * for English phonemes, but leaving them out makes the model look like a mouth
+ * floating in a head rather than the top of a continuous airway — and the
+ * larynx in particular is where voicing actually happens.
+ */
+export function buildLowerTract(materials) {
+  const group = new THREE.Group();
+  group.name = 'lower-tract';
+
+  // ── epiglottis: the flap that folds over the larynx when swallowing ──
+  const epiglottis = new THREE.Mesh(
+    new THREE.SphereGeometry(0.62, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    materials.soft,
+  );
+  epiglottis.scale.set(0.85, 1.5, 0.28);
+  epiglottis.position.set(0, -2.55, -2.35);
+  epiglottis.rotation.x = -0.35;
+  epiglottis.name = 'epiglottis';
+  group.add(epiglottis);
+
+  // ── larynx: the cartilage box holding the vocal folds ──
+  const larynx = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.82, 1.5, 20, 1, true), materials.cartilage);
+  larynx.position.set(0, -3.45, -2.85);
+  larynx.name = 'larynx';
+  group.add(larynx);
+
+  // the thyroid prominence — the Adam's apple, at the front of the larynx
+  const prominence = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 12), materials.cartilage);
+  prominence.scale.set(0.75, 1.0, 0.6);
+  prominence.position.set(0, -3.35, -2.15);
+  group.add(prominence);
+
+  // ── trachea: rings running down toward the lungs ──
+  const trachea = new THREE.Group();
+  trachea.name = 'trachea';
+  for (let i = 0; i < 7; i += 1) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.13, 8, 20), materials.cartilage);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, -4.35 - i * 0.52, -2.95);
+    trachea.add(ring);
+  }
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.70, 0.70, 3.9, 18, 1, true), materials.soft);
+  tube.position.set(0, -5.9, -2.95);
+  trachea.add(tube);
+  group.add(trachea);
+
+  return group;
+}
+
+/**
+ * The nasal cavity above the palate. It matters for exactly one thing in this
+ * app, but that thing is a whole class of sounds: when the velum lowers for
+ * /m/, /n/ and /ŋ/, this is where the air goes.
+ */
+export function buildNasalCavity(material) {
+  const group = new THREE.Group();
+  group.name = 'nasal-cavity';
+
+  const rows = 14;
+  const cols = 12;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(rows * cols * 3);
+  const idx = [];
+
+  for (let i = 0; i < rows; i += 1) {
+    const t = i / (rows - 1);                       // 0 back .. 1 front
+    const z = -2.6 + t * 6.2;
+    // floor of the cavity is the roof of the mouth; it arches up to the bridge
+    const yLow = palateMidline(Math.min(PALATE_FRONT, Math.max(PALATE_BACK, z))) + 0.25;
+    const yHigh = yLow + 0.85 + Math.sin(t * Math.PI) * 0.95;
+    const halfW = 1.05 - Math.abs(t - 0.45) * 0.55;
+    for (let j = 0; j < cols; j += 1) {
+      const a = (j / (cols - 1)) * Math.PI;
+      const o = (i * cols + j) * 3;
+      pos[o] = Math.cos(a) * halfW;
+      pos[o + 1] = yLow + (yHigh - yLow) * Math.sin(a);
+      pos[o + 2] = z;
+    }
+  }
+  for (let i = 0; i < rows - 1; i += 1) {
+    for (let j = 0; j < cols - 1; j += 1) {
+      const a = i * cols + j;
+      idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+    }
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+
+  const shell = new THREE.Mesh(geo, material);
+  shell.name = 'nasal-shell';
+  group.add(shell);
+  return group;
+}
+
+/** The uvula, hanging from the trailing edge of the soft palate. */
+export function buildUvula(material) {
+  const geo = new THREE.SphereGeometry(0.22, 12, 10);
+  geo.scale(0.8, 1.9, 0.8);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.name = 'uvula';
+  return mesh;
+}

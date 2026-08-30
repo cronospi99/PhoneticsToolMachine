@@ -14,10 +14,11 @@ import { Lips } from './anatomy/lips.js';
 import { buildArch } from './anatomy/teeth.js';
 import {
   buildPalate, buildVelum, buildPharynx, buildVocalFolds, buildFloor,
+  buildLowerTract, buildNasalCavity, buildUvula,
 } from './anatomy/oralCavity.js';
-import { buildHead, buildEars, LANDMARKS } from './anatomy/head.js';
 import { buildEyes } from './anatomy/eyes.js';
-import { buildHair } from './anatomy/hair.js';
+import { loadFace } from './anatomy/faceAsset.js';
+import { PROFILES, DEFAULT_PROFILE } from './anatomy/head.js';
 import { REST, resolveParams } from './articulation.js';
 
 /** Jaw hinge, roughly at the temporomandibular joint. */
@@ -67,8 +68,11 @@ function materials() {
       roughness: 0.74,
       metalness: 0.08,
     }),
+    // The sclera is never actually white in a lit face — it sits in the shadow
+    // of the brow and lids. Rendering it at paper white made the eyes read as
+    // ping-pong balls stuck on the front of the head.
     sclera: new THREE.MeshPhysicalMaterial({
-      color: 0xfdfbf7, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.06,
+      color: 0xd2cabf, roughness: 0.28, clearcoat: 0.6, clearcoatRoughness: 0.10,
     }),
     iris: new THREE.MeshStandardMaterial({
       color: 0x6b4d2a, roughness: 0.30, emissive: 0x1a1006, emissiveIntensity: 0.35,
@@ -84,6 +88,9 @@ function materials() {
       clearcoatRoughness: 0,
     }),
     brow: new THREE.MeshStandardMaterial({ color: 0x33221a, roughness: 0.82 }),
+    cartilage: tissue(0xd8c6b4, { roughness: 0.55 }),
+    softTissue: tissue(0xc2706a, { roughness: 0.72, side: THREE.DoubleSide }),
+    nasal: tissue(0xd79a95, { roughness: 0.78, side: THREE.DoubleSide }),
   };
 }
 
@@ -103,10 +110,26 @@ export class MouthModel {
     this.folds = buildVocalFolds(this.mat.folds);
     this.upperTeeth = buildArch(this.mat.teeth, true);
     this.upperLip = new Lips(this.mat.lipUpper, true);
+    this.lowerTract = buildLowerTract({
+      soft: this.mat.softTissue,
+      cartilage: this.mat.cartilage,
+    });
+    this.nasal = buildNasalCavity(this.mat.nasal);
+    this.uvula = buildUvula(this.mat.velum);
+    this.uvula.position.set(0, -0.55, -1.35);
+    this.velum.add(this.uvula);
 
-    // ── the face ──
-    this.head = buildHead(this.mat.skin);
-    this.ears = buildEars(this.mat.skinPlain);
+    // ── organs: everything that makes the sound, on its own switch ──
+    this.organs = new THREE.Group();
+    this.organs.name = 'organs';
+    this.organs.add(
+      this.palate, this.velum, this.pharynx, this.folds,
+      this.upperTeeth, this.upperLip.mesh, this.lowerTract, this.nasal,
+    );
+    this.group.add(this.organs);
+
+    // ── the face: eyes are animated so they stay procedural; the head, ears
+    // and hair arrive later as a glTF asset. ──
     this.eyes = buildEyes({
       sclera: this.mat.sclera,
       iris: this.mat.iris,
@@ -115,15 +138,16 @@ export class MouthModel {
       skin: this.mat.skinPlain,
       brow: this.mat.brow,
     });
-    this.hair = buildHair(this.mat.hair);
     this.face = new THREE.Group();
     this.face.name = 'face';
-    this.face.add(this.head, this.ears, this.eyes, this.hair);
+    this.face.add(this.eyes);
+    this.group.add(this.face);
 
-    this.group.add(
-      this.palate, this.velum, this.pharynx, this.folds,
-      this.upperTeeth, this.upperLip.mesh, this.face,
-    );
+    this.profile = DEFAULT_PROFILE;
+    this.skins = [];
+    this.hairs = [];
+    this.shell = null;
+    this.layers = { skin: 'on', organs: true };
 
     // ── jaw-mounted structures ──
     // The lower teeth, lower lip, floor and tongue all ride the mandible, so
@@ -144,7 +168,7 @@ export class MouthModel {
     this.jawContents.add(
       this.lowerTeeth, this.lowerLip.mesh, this.tongue.mesh, this.floor,
     );
-    this.group.add(this.jaw);
+    this.organs.add(this.jaw);
 
     // contact marker: lights up where an articulator meets the roof
     // An annotation, not anatomy: it draws on top of everything so the point of
@@ -236,6 +260,82 @@ export class MouthModel {
     this.contact.material.opacity = Math.min(1, show) * 0.75;
     this.contact.visible = show > 0.02;
     this.constrictionGap = near.gap;
+  }
+
+  /** Advance time-based motion: vocal fold flutter, blinking, gaze drift. */
+  tick(dt) {
+    this.phase += dt * 34;
+    this.folds.userData.setVoicing(this.params.voice, this.phase);
+    this.eyes.userData.tick(dt);
+  }
+
+  /**
+   * Load the head for a profile and swap it in.
+   *
+   * The head is a glTF asset rather than runtime geometry, so this is async;
+   * the oral anatomy is already on screen by the time it resolves, and if the
+   * fetch fails faceAsset falls back to sculpting the same head in-process.
+   *
+   * @param {'male'|'female'} id
+   * @returns {Promise<string>} 'gltf' or 'procedural'
+   */
+  async setProfile(id) {
+    const profile = PROFILES[id] || DEFAULT_PROFILE;
+    const loaded = await loadFace(profile.id);
+
+    if (this.shell) {
+      this.face.remove(this.shell);
+      this.shell.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) [].concat(o.material).forEach((m) => m.dispose());
+      });
+    }
+
+    this.profile = profile;
+    this.shell = loaded.group;
+    this.skins = loaded.skins;
+    this.hairs = loaded.hairs;
+    this.face.add(this.shell);
+    this.applyLayers();
+    return loaded.source;
+  }
+
+  /**
+   * Independent visibility for the two things worth looking at.
+   *
+   * They are separate switches because the questions are separate: "what does
+   * a face doing this look like" and "what is the tongue doing". Wiring them
+   * to one control forced a choice between them.
+   *
+   * @param {{skin?:'on'|'xray'|'off', organs?:boolean}} next
+   */
+  setLayers(next = {}) {
+    if (next.skin !== undefined) this.layers.skin = next.skin;
+    if (next.organs !== undefined) this.layers.organs = next.organs;
+    this.applyLayers();
+  }
+
+  applyLayers() {
+    const { skin, organs } = this.layers;
+    this.organs.visible = organs;
+
+    if (this.shell) this.shell.visible = skin !== 'off';
+    // Floating eyes behind a translucent face read as a mistake, so they
+    // follow the skin rather than being their own layer.
+    this.eyes.visible = skin === 'on';
+
+    const xray = skin === 'xray';
+    for (const m of [...this.skins, ...this.hairs]) {
+      m.transparent = xray;
+      m.opacity = xray ? 0.26 : 1;
+      m.depthWrite = !xray;
+      m.needsUpdate = true;
+    }
+  }
+
+  /** Kept for callers that still speak the old single-toggle language. */
+  setSkinMode(mode) {
+    this.setLayers({ skin: mode === 'hidden' ? 'off' : mode === 'glass' ? 'xray' : 'on' });
   }
 
   /** Advance time-based motion: vocal fold flutter, blinking, gaze drift. */

@@ -13,6 +13,7 @@
 import * as THREE from '../../vendor/three/three.module.min.js';
 import { MouthModel } from './mouthModel.js';
 import { OrbitCamera } from './orbit.js';
+import { RoomEnvironment } from '../../vendor/three/jsm/RoomEnvironment.js';
 import { buildPoseTrack, resolveParams, blendParams, REST, articulate } from './articulation.js';
 import { tokenize } from '../phonetics/symbols.js';
 
@@ -58,9 +59,17 @@ export class Visualizer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // filmic tone mapping keeps the highlights on skin from clipping to white
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 0.92;
     host.appendChild(this.renderer.domElement);
     this.renderer.domElement.setAttribute('aria-label', '3D model of the mouth and vocal tract');
+
+    // Image-based lighting. Three point lights can only ever approximate the
+    // way skin sits in a room; a real environment map is the single biggest
+    // step from "shaded plastic" toward "photographed".
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.20;
+    pmrem.dispose();
 
     this.controls = new OrbitCamera(this.camera, this.renderer.domElement);
     this.controls.setView('face');
@@ -78,7 +87,7 @@ export class Visualizer {
     // A portrait rig. The intensities are deliberately low: skin is a bright,
     // broad surface and the previous values — tuned when the model was a small
     // dark cavity — washed the face out to flat white.
-    const key = new THREE.DirectionalLight(0xfff2e0, 1.35);
+    const key = new THREE.DirectionalLight(0xfff2e0, 1.05);
     key.position.set(11, 13, 16);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -90,7 +99,7 @@ export class Visualizer {
     key.shadow.camera.bottom = -14;
     key.shadow.bias = -0.0012;
 
-    const fill = new THREE.DirectionalLight(0xbcd4ff, 0.45);
+    const fill = new THREE.DirectionalLight(0xa8c4f0, 0.28);
     fill.position.set(-14, 3, 9);
 
     const rim = new THREE.DirectionalLight(0xffd9a8, 0.75);
@@ -100,7 +109,12 @@ export class Visualizer {
     const throat = new THREE.PointLight(0xff8a7a, 9, 13, 2);
     throat.position.set(0, -1.2, -1.6);
 
-    this.scene.add(key, fill, rim, throat, new THREE.AmbientLight(0xdfe8ff, 0.30));
+    // and one just inside the lips: with the head opaque, the tongue is only
+    // lit through the mouth opening, and the key light cannot reach it
+    const mouth = new THREE.PointLight(0xffd8c8, 7, 6.5, 2);
+    mouth.position.set(0, -0.1, 2.6);
+
+    this.scene.add(key, fill, rim, throat, mouth, new THREE.AmbientLight(0xffe8d8, 0.12));
   }
 
   /* ── events ─────────────────────────────────────────────────────────── */
@@ -243,6 +257,11 @@ export class Visualizer {
   setView(name) { this.controls.setView(name); }
 
   setSkinMode(mode) { this.model.setSkinMode(mode); }
+
+  setLayers(next) { this.model.setLayers(next); }
+
+  /** @returns {Promise<string>} 'gltf' or 'procedural' */
+  setProfile(id) { return this.model.setProfile(id); }
 
   dispose() {
     cancelAnimationFrame(this.frameHandle);

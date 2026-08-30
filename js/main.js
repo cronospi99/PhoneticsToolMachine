@@ -18,6 +18,7 @@ import { TranscriptView } from './ui/transcriptView.js';
 import { ChartView } from './ui/chartView.js';
 import { Readout } from './ui/readout.js';
 import { Visualizer, webglAvailable } from './viz/visualizer.js';
+import { PROFILES } from './viz/anatomy/head.js';
 
 const SAMPLES = [
   'With great power comes great responsibility.',
@@ -33,9 +34,12 @@ const state = {
   accent: 'uk',
   rate: 1,
   result: null,
-  skinMode: 'face',
+  skinMode: 'on',
   /** 'auto' | 'builtin' | 'system' — which synthesiser speaks. */
   voice: 'auto',
+  /** 'male' | 'female' — drives both the head and the built-in voice. */
+  gender: 'male',
+  organs: true,
 };
 
 /** Filled in once the browser reports its voice list. */
@@ -75,7 +79,16 @@ $('#readout-slot').appendChild(readout.overlay);
 
 let visualizer = null;
 
+/**
+ * Every status write bumps this. Anything that reports asynchronously captures
+ * it first and stays quiet if something newer has spoken since — otherwise a
+ * slow voice-list query lands a second later and overwrites the transcription
+ * the user just typed.
+ */
+let statusGeneration = 0;
+
 function setStatus(message, tone = 'ok') {
+  statusGeneration += 1;
   ui.statusText.textContent = message;
   ui.status.dataset.tone = tone;
 }
@@ -169,7 +182,7 @@ async function speakLine(accent = state.accent) {
 
   if (builtIn) {
     setStatus(`Speaking with the built-in voice (${accent.toUpperCase()})…`);
-    await voiceEngine.speak(stream, { rate: state.rate });
+    await voiceEngine.speak(stream, { rate: state.rate, ...PROFILES[state.gender].voice });
   } else {
     const name = voiceAvailability[accent]?.name;
     setStatus(`Speaking (${accent.toUpperCase()}${name ? ` · ${name}` : ''})…`);
@@ -204,7 +217,9 @@ bus.on('word:selected', async ({ wordIndex, accent }) => {
   if (visualizer) visualizer.play(stream, state.rate);
 
   if (useBuiltIn(accent)) {
-    await voiceEngine.speak(stream, { rate: state.rate * 0.85 });
+    await voiceEngine.speak(stream, {
+      rate: state.rate * 0.85, ...PROFILES[state.gender].voice,
+    });
   } else {
     await speaker.speak(tok.spelling, { accent, rate: state.rate * 0.9 });
   }
@@ -255,9 +270,9 @@ for (const btn of document.querySelectorAll('[data-view]')) {
 }
 
 const SKIN_MODES = [
-  ['face', 'Skin on', 'The full head — you see inside through the open mouth'],
-  ['glass', 'X-ray', 'Translucent skin, so the articulators show through'],
-  ['hidden', 'Skin off', 'Just the anatomy, with the face removed'],
+  ['on', 'Skin on', 'The full head — you see inside through the open mouth'],
+  ['xray', 'X-ray', 'Translucent skin, so the articulators show through'],
+  ['off', 'Skin off', 'Just the organs, with the face removed'],
 ];
 const skinBtn = $('#btn-skin');
 skinBtn.addEventListener('click', () => {
@@ -266,8 +281,30 @@ skinBtn.addEventListener('click', () => {
   state.skinMode = id;
   skinBtn.textContent = label;
   skinBtn.title = hint;
-  skinBtn.setAttribute('aria-pressed', String(id !== 'face'));
-  visualizer?.setSkinMode(id);
+  skinBtn.setAttribute('aria-pressed', String(id !== 'on'));
+  visualizer?.setLayers({ skin: id });
+});
+
+const organsBtn = $('#btn-organs');
+organsBtn.addEventListener('click', () => {
+  state.organs = !state.organs;
+  organsBtn.textContent = state.organs ? 'Organs on' : 'Organs off';
+  organsBtn.setAttribute('aria-pressed', String(state.organs));
+  visualizer?.setLayers({ organs: state.organs });
+});
+
+const genderBtn = $('#btn-gender');
+genderBtn.addEventListener('click', async () => {
+  state.gender = state.gender === 'male' ? 'female' : 'male';
+  const p = PROFILES[state.gender];
+  genderBtn.textContent = state.gender === 'male' ? '♂ Male' : '♀ Female';
+  genderBtn.disabled = true;
+  setStatus(`Loading the ${p.label.toLowerCase()} head…`);
+  const source = await visualizer?.setProfile(state.gender);
+  genderBtn.disabled = false;
+  setStatus(source === 'procedural'
+    ? `${p.label} head (sculpted in-page — the glTF asset did not load).`
+    : `${p.label} head and voice.`);
 });
 
 /* ── 3D stage ────────────────────────────────────────────────────────────── */
@@ -314,12 +351,15 @@ function startVisualizer() {
  * transcription in an American accent would teach the wrong thing.
  */
 async function reportVoices() {
+  const generation = statusGeneration;
   if (speaker.supported) {
     await speaker.ready;
     voiceAvailability = speaker.availability();
   } else {
     voiceAvailability = {};
   }
+  // the voice list can take a second to arrive; do not clobber a newer message
+  if (generation !== statusGeneration) return;
 
   const exact = ACCENTS.filter((a) => voiceAvailability[a.id]?.exact).map((a) => a.label);
   const missing = ACCENTS.filter((a) => !voiceAvailability[a.id]?.exact).map((a) => a.label);
@@ -354,7 +394,14 @@ function init() {
   ui.rateOut.textContent = '1.0×';
   render();
   startVisualizer();
-  visualizer?.setSkinMode(state.skinMode);
+  if (visualizer) {
+    visualizer.setLayers({ skin: state.skinMode, organs: state.organs });
+    visualizer.setProfile(state.gender).then((source) => {
+      if (source === 'procedural') {
+        setStatus('The head asset did not load — sculpting it in-page instead.', 'warn');
+      }
+    });
+  }
   reportVoices();
 
   // expose the engine for teaching, debugging and automated tests

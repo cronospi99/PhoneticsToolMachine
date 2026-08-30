@@ -9,7 +9,7 @@
  */
 
 import * as THREE from '../../../vendor/three/three.module.min.js';
-import { LANDMARKS, HEAD_CENTRE, HEAD_RADII } from './head.js';
+import { LANDMARKS, HEAD_CENTRE, HEAD_RADII, DEFAULT_PROFILE } from './head.js';
 
 const SEG_W = 144;
 const SEG_H = 108;
@@ -24,7 +24,7 @@ const smoothstep = (e0, e1, x) => {
  * hairline. The hairline dips at the temples and rises over the forehead,
  * which is what stops it looking like a swimming cap.
  */
-function coverage(x, y, z) {
+function coverage(x, y, z, longer) {
   const L = LANDMARKS;
   // front hairline, with a slight widow's peak at the midline
   const peak = Math.exp(-((x / 2.0) ** 2)) * 0.75;
@@ -40,7 +40,8 @@ function coverage(x, y, z) {
   const backness = smoothstep(2.0, -3.0, z);
   const sideness = smoothstep(4.3, 6.1, Math.abs(x));
   const low = Math.max(backness, sideness * 0.85);
-  const lowLine = L.earY - 0.6;
+  // `longer` drops the back and sides well past the jaw
+  const lowLine = L.earY - 0.6 - longer * 6.5;
   const back = smoothstep(lowLine - 1.8, lowLine + 1.8, y);
 
   return Math.max(front, low * back);
@@ -50,9 +51,10 @@ function coverage(x, y, z) {
  * @param {THREE.Material} material
  * @returns {THREE.Group}
  */
-export function buildHair(material) {
+export function buildHair(material, profile = DEFAULT_PROFILE) {
   const group = new THREE.Group();
   group.name = 'hair';
+  const longer = profile.hairLength ?? 0;
 
   const base = new THREE.SphereGeometry(1, SEG_W, SEG_H);
   const pos = base.attributes.position;
@@ -71,7 +73,7 @@ export function buildHair(material) {
     const jaw = smoothstep(2.6, -2.4, p.y);
     p.x *= 1 - jaw * 0.34;
 
-    const c = coverage(p.x, p.y, p.z);
+    const c = coverage(p.x, p.y, p.z, longer);
     cover[i] = c;
 
     // lift off the scalp, with clumping so the surface is not glassy-smooth

@@ -249,9 +249,18 @@ check('all three accents of "car" render sound',
   Math.min(voice.rms.us, voice.rms.uk, voice.rms.au) > 0.01, true);
 
 /* ── the face is actually a face ─────────────────────────────────────────── */
+// The head arrives as a glTF asset, so wait for it before asking about it.
+await page.waitForFunction(
+  () => !!window.PhoneticsToolMachine.visualizer?.model?.shell,
+  { timeout: 15000 },
+);
+
 const faceParts = await page.evaluate(() => {
   const m = window.PhoneticsToolMachine.visualizer.model;
   const named = (n) => !!m.group.getObjectByName(n);
+  let tris = 0;
+  m.shell.traverse((o) => { if (o.geometry?.index) tris += o.geometry.index.count / 3; });
+
   const pose = () => {
     const out = [];
     m.eyes.traverse((o) => out.push(o.rotation.x.toFixed(4), o.rotation.y.toFixed(4)));
@@ -261,29 +270,80 @@ const faceParts = await page.evaluate(() => {
   // run a few seconds of idle time and see whether anything moved
   for (let i = 0; i < 200; i += 1) m.tick(0.05);
   const after = pose();
+
   return {
     head: named('head'),
     ears: named('ears'),
+    hair: named('hair'),
+    neck: named('neck'),
     eyes: named('eyes'),
-    hair: named('hair-cap'),
-    headTriangles: m.head.geometry.index.count / 3,
+    profile: m.profile.id,
+    triangles: tris,
     blinked: before !== after,
+    // the complete airway, not just the mouth
+    larynx: named('larynx'),
+    trachea: named('trachea'),
+    epiglottis: named('epiglottis'),
+    nasal: named('nasal-cavity'),
+    uvula: named('uvula'),
+    tongue: named('tongue'),
   };
 });
-check('the head is built', faceParts.head, true);
-check('the head has ears', faceParts.ears, true);
-check('the head has eyes', faceParts.eyes, true);
-check('the head has hair', faceParts.hair, true);
-check('the head is more than a blocked-out shape', faceParts.headTriangles > 8000, true);
+
+check('the head asset loads', faceParts.head, true);
+check('it has ears', faceParts.ears, true);
+check('it has hair', faceParts.hair, true);
+check('it has a neck to hold the larynx', faceParts.neck, true);
+check('it has eyes', faceParts.eyes, true);
+check('the head is a detailed mesh, not a blocked-out shape',
+  faceParts.triangles > 40000, true);
 check('the eyes blink and drift on their own', faceParts.blinked, true);
 
-// The face must be able to get out of the way — that is the whole app.
-for (const expected of ['X-ray', 'Skin off', 'Skin on']) {
-  await page.click('#btn-skin');
-  await page.waitForTimeout(200);
-  check(`the skin toggle reaches "${expected}"`,
-    (await page.textContent('#btn-skin')).trim(), expected);
-}
+check('the airway includes the larynx', faceParts.larynx, true);
+check('the airway includes the trachea', faceParts.trachea, true);
+check('the airway includes the epiglottis', faceParts.epiglottis, true);
+check('the airway includes the nasal cavity', faceParts.nasal, true);
+check('the soft palate has a uvula', faceParts.uvula, true);
+check('the tongue is present', faceParts.tongue, true);
+
+// Skin and organs are independent layers, so either can be studied alone.
+const layers = await page.evaluate(async () => {
+  const v = window.PhoneticsToolMachine.visualizer;
+  const m = v.model;
+  const snap = () => ({ shell: m.shell.visible, organs: m.organs.visible });
+  const out = {};
+  v.setLayers({ skin: 'off', organs: true });
+  out.organsOnly = snap();
+  v.setLayers({ skin: 'on', organs: false });
+  out.skinOnly = snap();
+  v.setLayers({ skin: 'on', organs: true });
+  out.both = snap();
+  return out;
+});
+check('organs can be shown without the face',
+  layers.organsOnly.organs && !layers.organsOnly.shell, true);
+check('the face can be shown without the organs',
+  layers.skinOnly.shell && !layers.skinOnly.organs, true);
+check('both can be shown together', layers.both.shell && layers.both.organs, true);
+
+// Switching gender swaps the head asset and the voice together.
+const swapped = await page.evaluate(async () => {
+  const v = window.PhoneticsToolMachine.visualizer;
+  const before = v.model.profile;
+  const source = await v.setProfile('female');
+  const after = v.model.profile;
+  return {
+    source,
+    from: before.id,
+    to: after.id,
+    pitchRose: after.voice.f0 > before.voice.f0,
+    tractShorter: after.voice.tract > before.voice.tract,
+  };
+});
+check('the head asset comes from glTF', swapped.source, 'gltf');
+check('switching gender swaps the head', swapped.to, 'female');
+check('the female voice is pitched higher', swapped.pitchRose, true);
+check('the female vocal tract is shorter', swapped.tractShorter, true);
 
 /* ── the voice selector is wired up ──────────────────────────────────────── */
 await page.selectOption('#voice-select', 'builtin');
@@ -293,7 +353,13 @@ check('choosing the built-in voice is reported',
 
 /* ── typing re-transcribes ───────────────────────────────────────────────── */
 await page.fill('#text-input', 'zorblatt fizzled');
-await page.waitForTimeout(400);
+// The re-render is debounced, and under the load of a 72k-triangle head plus
+// offline audio renders it can land well past a fixed sleep. Wait for the
+// condition rather than guessing at a duration.
+await page.waitForFunction(
+  () => /estimated/.test(document.querySelector('#status-text').textContent),
+  { timeout: 8000 },
+);
 const typed = await page.evaluate(() => ({
   text: document.querySelector('#ipa-uk').textContent.trim(),
   estimated: document.querySelectorAll('#ipa-uk .is-estimated').length,

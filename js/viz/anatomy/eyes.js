@@ -13,8 +13,8 @@ import { LANDMARKS } from './head.js';
 const EYE_R = 1.00;
 
 /** Lid rotations for a relaxed, open eye. See the note where they are used. */
-const UPPER_OPEN = -0.47;
-const LOWER_OPEN = Math.PI + 0.63;
+const UPPER_OPEN = -0.34;
+const LOWER_OPEN = Math.PI + 0.50;
 
 /**
  * @param {object} materials { sclera, iris, pupil, skin, brow }
@@ -62,7 +62,7 @@ export function buildEyes(materials) {
     eye.add(irisGroup);
 
     // ── lids: spherical caps a shade larger than the globe ──
-    const lidGeo = new THREE.SphereGeometry(EYE_R * 1.06, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    const lidGeo = new THREE.SphereGeometry(EYE_R * 1.04, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.60);
     // Lid opening angles matter more than they sound. The cap spans 99° from
     // its pole, so the tilt decides where its edge lands relative to the eye's
     // midline. An open eye shows the whole iris apart from its top sliver:

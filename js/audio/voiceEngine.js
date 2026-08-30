@@ -80,6 +80,11 @@ const MANNER_GAIN = {
 function buildGraph(ctx, stream, opts = {}) {
   const rate = Math.min(2, Math.max(0.4, opts.rate ?? 1));
   const pitch = Math.min(2, Math.max(0.5, opts.pitch ?? 1));
+  // A shorter vocal tract resonates higher across the board, which is most of
+  // what separates a female voice from a male one — the raised f0 alone just
+  // sounds like the same speaker straining.
+  const tract = Math.min(1.4, Math.max(0.8, opts.tract ?? 1));
+  const f0Base = opts.f0 ?? BASE_F0;
   const track = buildPoseTrack(stream, rate);
 
   const master = ctx.createGain();
@@ -135,7 +140,7 @@ function buildGraph(ctx, stream, opts = {}) {
 
   // f0 declination: pitch drifts down across an utterance. Without it, speech
   // sounds like a list rather than a sentence.
-  glottis.frequency.setValueAtTime(BASE_F0 * pitch, start);
+  glottis.frequency.setValueAtTime(f0Base * pitch, start);
 
   let prevSpec = null;
 
@@ -159,8 +164,8 @@ function buildGraph(ctx, stream, opts = {}) {
     // Formant transitions: ramp INTO each target rather than stepping. These
     // transitions are most of what tells a listener where a stop was made.
     bank.forEach((b, i) => {
-      const target = spec.f[i];
-      const bw = spec.bw[i];
+      const target = spec.f[i] * tract;
+      const bw = spec.bw[i] * tract;
       const q = Math.max(1.2, target / Math.max(30, bw));
       if (prevSpec === null) {
         b.filter.frequency.setValueAtTime(target, at);
@@ -176,7 +181,7 @@ function buildGraph(ctx, stream, opts = {}) {
     const progress = totalSec > 0 ? (seg.at / 1000) / totalSec : 0;
     const stress = seg.source && seg.source.stressed ? seg.source.stressed : 0;
     const accentBump = stress === 1 ? 1.14 : stress === 2 ? 1.06 : 1;
-    const f0 = BASE_F0 * pitch * accentBump * (1 - progress * 0.20);
+    const f0 = f0Base * pitch * accentBump * (1 - progress * 0.20);
     glottis.frequency.linearRampToValueAtTime(f0, at + dur * 0.5);
 
     // amplitude
@@ -200,7 +205,7 @@ function buildGraph(ctx, stream, opts = {}) {
     voiceGain.gain.setTargetAtTime(voiceLevel * 0.78, at, RAMP);
 
     if (frame.noise) {
-      fricFilter.frequency.setTargetAtTime(frame.noise.centre, at, 0.008);
+      fricFilter.frequency.setTargetAtTime(frame.noise.centre * tract, at, 0.008);
       fricFilter.Q.setTargetAtTime(frame.noise.q, at, 0.008);
       noiseGain.gain.setTargetAtTime(frame.noise.gain, at, RAMP * 0.6);
       // a burst is a transient, not a sustained hiss
